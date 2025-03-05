@@ -2,3 +2,9 @@
 Debug/
 Release/
 temp/
+
+#.vs Files
+.vs/
+
+#3rdparty
+TheBindingOfIsaacItemFinder/3rdparty/
