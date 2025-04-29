@@ -60,19 +60,21 @@ bool ObjectFinder::findObjectInGame(double ratioThresh)
     }
     std::cout << "[ObjectFinder] Dobre dopasowania: "
         << goodMatches.size() << std::endl;
-    if (goodMatches.size() < 4) {
+    if (goodMatches.size() < 40) {
         std::cerr << "Zbyt malo dopasowan.\n";
         return false;
     }
 
     // 6) Homografia
     std::vector<cv::Point2f> ptsObj, ptsScene;
-    for (auto& d : goodMatches) {
+    for (auto& d : goodMatches) 
+    {
         ptsObj.push_back(keypointsTempl[d.queryIdx].pt);
         ptsScene.push_back(keypointsScene[d.trainIdx].pt);
     }
     cv::Mat H = cv::findHomography(ptsObj, ptsScene, cv::RANSAC);
-    if (H.empty()) {
+    if (H.empty()) 
+    {
         std::cerr << "Nie udalo sie obliczyc homografii.\n";
         return false;
     }
@@ -84,7 +86,8 @@ bool ObjectFinder::findObjectInGame(double ratioThresh)
     cv::perspectiveTransform(objCorners, sceneCorners, H);
 
     cv::Mat vis = screenBGR.clone();
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 4; ++i) 
+    {
         cv::line(vis, sceneCorners[i],
             sceneCorners[(i + 1) % 4], cv::Scalar(0, 255, 0), 2);
     }
