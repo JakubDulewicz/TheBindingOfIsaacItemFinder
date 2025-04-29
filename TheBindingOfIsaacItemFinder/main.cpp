@@ -4,64 +4,15 @@
 #pragma comment(lib, "Shcore.lib")
 #include <opencv2/opencv.hpp>
 #include "IsaacMovementController.h"
+#include "ObjectFinder.h"
 
 static const char* GAME_WINDOW_TITLE = "Binding of Isaac: Repentance";
-cv::Mat CaptureScreen(HWND hWnd)
-{
-	RECT rect;
-	if (!GetWindowRect(hWnd, &rect)) {
-		std::cerr << "Błąd: nie udało się pobrać rozmiaru okna.\n";
-		return cv::Mat();
-	}
-
-	int width = rect.right - rect.left;
-	int height = rect.bottom - rect.top;
-
-	HDC hWindowDC = GetDC(hWnd);
-	if (!hWindowDC) {
-		std::cerr << "Błąd: nie udało się pobrać DC okna.\n";
-		return cv::Mat();
-	}
-
-	HDC hMemoryDC = CreateCompatibleDC(hWindowDC);
-	HBITMAP hBitmap = CreateCompatibleBitmap(hWindowDC, width, height);
-	HGDIOBJ hOld = SelectObject(hMemoryDC, hBitmap);
-
-	if (!BitBlt(hMemoryDC, 0, 0, width, height, hWindowDC, 0, 0, SRCCOPY)) {
-		std::cerr << "Błąd: BitBlt nie powiódł się.\n";
-	}
-
-	ReleaseDC(hWnd, hWindowDC);
-
-	BITMAP bmp;
-	GetObject(hBitmap, sizeof(BITMAP), &bmp);
-
-	cv::Mat matImage(bmp.bmHeight, bmp.bmWidth, CV_8UC4);
-
-	BITMAPINFO bmi = { 0 };
-	bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bmi.bmiHeader.biWidth = bmp.bmWidth;
-	bmi.bmiHeader.biHeight = -bmp.bmHeight;  // Ujemna wysokość -> odwrócenie pionowe
-	bmi.bmiHeader.biPlanes = 1;
-	bmi.bmiHeader.biBitCount = 32;
-	bmi.bmiHeader.biCompression = BI_RGB;
-
-	GetDIBits(hMemoryDC, hBitmap, 0, bmp.bmHeight,
-		matImage.data, &bmi, DIB_RGB_COLORS);
-
-	SelectObject(hMemoryDC, hOld);
-	DeleteObject(hBitmap);
-	DeleteDC(hMemoryDC);
-
-	cv::Mat matFinal;
-	cv::cvtColor(matImage, matFinal, cv::COLOR_BGRA2BGR);
-
-	return matFinal;
-}
 
 int main()
 {
 	IsaacMovementController controller;
+	ObjectFinder objectFinder;
+
 	if (controller.FocusGame())
 	{
 		Sleep(1000);

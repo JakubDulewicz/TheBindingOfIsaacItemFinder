@@ -145,9 +145,11 @@
   <ItemGroup>
     <ClCompile Include="IsaacMovementController.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="ObjectFinder.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="IsaacMovementController.h" />
+    <ClInclude Include="ObjectFinder.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
