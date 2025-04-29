@@ -10,116 +10,91 @@ ObjectFinder::ObjectFinder(const std::string& windowtitle)
 
 bool ObjectFinder::findObjectInGame(double ratioThresh)
 {
-    // 1. Zrób zrzut ekranu okna gry
-    cv::Mat screenBGR = captureScreen();
-    if (screenBGR.empty())
-    {
-        std::cerr << "Blad przechwytywania ekranu.\n";
+    // 0) Wczytaj wzorzec i przygotuj ma³y template 95×95
+    cv::Mat templ = cv::imread("d20.png", cv::IMREAD_GRAYSCALE);
+    if (templ.empty()) {
+        std::cerr << "Nie udalo sie wczytac d20.png\n";
         return false;
     }
+    cv::Mat templSmall;
+    cv::resize(templ, templSmall, cv::Size(95, 95));
 
-    // 2. Konwertuj do szaroœci, bo wzorzec mamy w szaroœci
+    // 1) Wczytaj screen z pliku i skonwertuj do szaroœci
+    cv::Mat screenBGR = captureFullScreen();
+    if (screenBGR.empty()) {
+        std::cerr << "Nie udalo sie wczytac screen.png\n";
+        return false;
+    }
     cv::Mat screenGray;
     cv::cvtColor(screenBGR, screenGray, cv::COLOR_BGR2GRAY);
 
-    // 3. Wykryj cechy w obrazie ekranu
-    cv::Ptr<cv::SIFT> sift = cv::SIFT::create(20000);
-    std::vector<cv::KeyPoint> keypointsScene;
-    cv::Mat descriptorsScene;
+    // 2) Oblicz SIFT-owe cechy i deskryptory dla small template
+    cv::Ptr<cv::SIFT> sift = cv::SIFT::create(40000);
+    std::vector<cv::KeyPoint> keypointsTempl, keypointsScene;
+    cv::Mat descriptorsTempl, descriptorsScene;
+    sift->detectAndCompute(templSmall, cv::noArray(),
+        keypointsTempl, descriptorsTempl);
+    if (descriptorsTempl.empty()) {
+        std::cerr << "Brak deskryptorow we wzorcu.\n";
+        return false;
+    }
+
+    // 3) Oblicz SIFT dla sceny
     sift->detectAndCompute(screenGray, cv::noArray(),
         keypointsScene, descriptorsScene);
-
-    if (keypointsScene.empty() || descriptorsScene.empty())
-    {
-        std::cerr << "Za malo cech w obrazie z ekranu.\n";
+    if (descriptorsScene.empty()) {
+        std::cerr << "Brak deskryptorow w scenie.\n";
         return false;
     }
 
-    // 4. Dopasowanie deskryptorow (K=2, BFMatcher L2)
+    // 4) Dopasowanie deskryptorow (K=2, BFMatcher L2)
     cv::BFMatcher matcher(cv::NORM_L2);
     std::vector<std::vector<cv::DMatch>> knnMatches;
-    matcher.knnMatch(_descriptorsTemplate, descriptorsScene, knnMatches, 2);
+    matcher.knnMatch(descriptorsTempl, descriptorsScene, knnMatches, 2);
 
-    // 5. Filtrowanie dopasowan (ratio test)
+    // 5) Ratio test
     std::vector<cv::DMatch> goodMatches;
-    for (size_t i = 0; i < knnMatches.size(); i++)
-    {
-        if (knnMatches[i].size() == 2)
-        {
-            const cv::DMatch& m1 = knnMatches[i][0];
-            const cv::DMatch& m2 = knnMatches[i][1];
-            if (m1.distance < ratioThresh * m2.distance)
-            {
-                goodMatches.push_back(m1);
-            }
-        }
+    for (auto& m : knnMatches) {
+        if (m.size() == 2 && m[0].distance < ratioThresh * m[1].distance)
+            goodMatches.push_back(m[0]);
     }
-
     std::cout << "[ObjectFinder] Dobre dopasowania: "
         << goodMatches.size() << std::endl;
-
-    // (Opcjonalnie) zobacz dopasowania w obrazie:
-    //  {
-    //      cv::Mat imgMatches;
-    //      cv::drawMatches(m_templateImg, m_keypointsTemplate,
-    //                      screenGray,    keypointsScene,
-    //                      goodMatches,   imgMatches,
-    //                      cv::Scalar::all(-1), cv::Scalar::all(-1),
-    //                      std::vector<char>(),
-    //                      cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-    //      cv::imshow("Dopasowania (drawMatches)", imgMatches);
-    //      cv::waitKey(1);
-    //  }
-
-    // 6. Jezeli mamy wystarczajaco duzo dopasowan, sprobujmy obliczyc homografie
-    if (goodMatches.size() < 4)
-    {
-        std::cerr << "Zbyt malo dopasowan do wyznaczenia homografii.\n";
+    if (goodMatches.size() < 4) {
+        std::cerr << "Zbyt malo dopasowan.\n";
         return false;
     }
 
-    std::vector<cv::Point2f> objPoints, scenePoints;
-    for (auto& match : goodMatches)
-    {
-        objPoints.push_back(_keypointsTemplate[match.queryIdx].pt);
-        scenePoints.push_back(keypointsScene[match.trainIdx].pt);
+    // 6) Homografia
+    std::vector<cv::Point2f> ptsObj, ptsScene;
+    for (auto& d : goodMatches) {
+        ptsObj.push_back(keypointsTempl[d.queryIdx].pt);
+        ptsScene.push_back(keypointsScene[d.trainIdx].pt);
     }
-
-    // RANSAC do obliczenia homografii
-    cv::Mat H = cv::findHomography(objPoints, scenePoints, cv::RANSAC);
-
-    if (H.empty())
-    {
-        std::cerr << "Nie udalo sie obliczyc homografii (H pusta).\n";
+    cv::Mat H = cv::findHomography(ptsObj, ptsScene, cv::RANSAC);
+    if (H.empty()) {
+        std::cerr << "Nie udalo sie obliczyc homografii.\n";
         return false;
     }
 
-    // 7. Rysujemy obrys znalezionego obiektu - na kopii screenGray, np.
-    // (Zamieniamy screenGray na BGR, by zobaczyc kolorowa linie)
-    cv::Mat imgResult;
-    cv::cvtColor(screenGray, imgResult, cv::COLOR_GRAY2BGR);
-
-    // Rogi oryginalnego wzorca
+    // 7) Rysowanie obrysu 95×95
     std::vector<cv::Point2f> objCorners = {
-        {0.f, 0.f},
-        {(float)_templateImg.cols, 0.f},
-        {(float)_templateImg.cols, (float)_templateImg.rows},
-        {0.f, (float)_templateImg.rows}
-    };
-    std::vector<cv::Point2f> sceneCorners(4);
-
+        {0,0}, {95,0}, {95,95}, {0,95}
+    }, sceneCorners(4);
     cv::perspectiveTransform(objCorners, sceneCorners, H);
 
-    // Rysowanie - zielone linie
-    cv::line(imgResult, sceneCorners[0], sceneCorners[1], cv::Scalar(0, 255, 0), 2);
-    cv::line(imgResult, sceneCorners[1], sceneCorners[2], cv::Scalar(0, 255, 0), 2);
-    cv::line(imgResult, sceneCorners[2], sceneCorners[3], cv::Scalar(0, 255, 0), 2);
-    cv::line(imgResult, sceneCorners[3], sceneCorners[0], cv::Scalar(0, 255, 0), 2);
+    cv::Mat vis = screenBGR.clone();
+    for (int i = 0; i < 4; ++i) {
+        cv::line(vis, sceneCorners[i],
+            sceneCorners[(i + 1) % 4], cv::Scalar(0, 255, 0), 2);
+    }
 
-    cv::imshow("Znaleziony obiekt w oknie gry", imgResult);
+    // 8) Zapis i wyœwietlenie
+    static int cnt = 0;
+    cv::imwrite("detected_" + std::to_string(cnt++) + ".png", vis);
+    cv::imshow("Detected (SIFT)", vis);
     cv::waitKey(1);
 
-    // Jesli doszlismy tu, uznajemy ze sukces
     return true;
 }
 
@@ -184,4 +159,49 @@ cv::Mat ObjectFinder::captureScreen()
     cv::cvtColor(matImage, matFinal, cv::COLOR_BGRA2BGR);
 
     return matFinal;
+}
+
+cv::Mat ObjectFinder::captureFullScreen()
+{
+    if (!_hGameWnd) return {};
+
+    // 1) Ustal monitor, na którym jest okno
+    HMONITOR hMon = MonitorFromWindow(_hGameWnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfo(hMon, &mi);
+
+    int x = mi.rcMonitor.left;
+    int y = mi.rcMonitor.top;
+    int width = mi.rcMonitor.right - mi.rcMonitor.left;
+    int height = mi.rcMonitor.bottom - mi.rcMonitor.top;
+
+    // 2) DC ca³ego ekranu
+    HDC hScreenDC = GetDC(NULL);
+    HDC hMemDC = CreateCompatibleDC(hScreenDC);
+    HBITMAP hBitmap = CreateCompatibleBitmap(hScreenDC, width, height);
+    HGDIOBJ oldBmp = SelectObject(hMemDC, hBitmap);
+
+    // 3) BitBlt z regionu monitora
+    BitBlt(hMemDC, 0, 0, width, height, hScreenDC, x, y, SRCCOPY);
+    ReleaseDC(NULL, hScreenDC);
+
+    // 4) Konwersja do cv::Mat (jak wy¿ej)
+    BITMAP bmp;  GetObject(hBitmap, sizeof(bmp), &bmp);
+    cv::Mat tmp(bmp.bmHeight, bmp.bmWidth, CV_8UC4);
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize = sizeof(bmi.bmiHeader);
+    bmi.bmiHeader.biWidth = bmp.bmWidth;
+    bmi.bmiHeader.biHeight = -bmp.bmHeight;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+    GetDIBits(hMemDC, hBitmap, 0, bmp.bmHeight, tmp.data, &bmi, DIB_RGB_COLORS);
+
+    SelectObject(hMemDC, oldBmp);
+    DeleteObject(hBitmap);
+    DeleteDC(hMemDC);
+
+    cv::Mat result;
+    cv::cvtColor(tmp, result, cv::COLOR_BGRA2BGR);
+    return result;
 }

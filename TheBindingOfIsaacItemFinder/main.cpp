@@ -10,23 +10,31 @@ static const char* GAME_WINDOW_TITLE = "Binding of Isaac: Repentance";
 
 int main()
 {
+	Sleep(2000);
 	IsaacMovementController controller;
 	ObjectFinder objectFinder;
+	objectFinder.findObjectInGame(0.95f);
 
-	if (controller.FocusGame())
-	{
-		Sleep(1000);
-		controller.PressEscape();
-		Sleep(100);
-
-		while (true)
-		{
-			controller.MoveIsaacToShop();
-			//Detect object;
-			controller.ResetGame();
-			Sleep(1000);
-		}
-;	}
+//	if (controller.FocusGame())
+//	{
+//		Sleep(1000);
+//		controller.PressEscape();
+//		Sleep(100);
+//
+//		while (true)
+//		{
+//			controller.MoveIsaacToShop();
+//			bool result = objectFinder.findObjectInGame(0.95f);
+//			if (result)
+//			{
+//				std::cerr << "DZIALLLAAAAA!!!!!";
+//				return 0;
+//			}
+//
+//			controller.ResetGame();
+//			Sleep(1000);
+//		}
+//;	}
 
 
 	//cv::Mat imgObject = cv::imread("d20.png", cv::IMREAD_GRAYSCALE);

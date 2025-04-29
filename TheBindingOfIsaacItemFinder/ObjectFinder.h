@@ -13,6 +13,7 @@ public:
 
 private:
 	cv::Mat captureScreen();
+    cv::Mat captureFullScreen();
 
     std::string _windowTitle;
     HWND _hGameWnd;
